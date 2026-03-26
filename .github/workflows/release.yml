@@ -46,7 +46,27 @@ jobs:
           echo "${HOME}/go/bin" >> "$GITHUB_PATH"
 
       - name: Build release bundle
-        run: ./build-release.sh "${{ steps.version.outputs.value }}"
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dist_dir="$GITHUB_WORKSPACE/dist"
+          stage_dir="$dist_dir/winboat-helper-${VERSION}-linux-amd64"
+          archive_path="$dist_dir/$(basename "$stage_dir").tar.xz"
+
+          mkdir -p "$dist_dir"
+          rm -rf "$stage_dir"
+          mkdir -p "$stage_dir"
+
+          GOARCH=amd64 fyne build --release --source-dir "$GITHUB_WORKSPACE" -o "$stage_dir/winboat-helper"
+
+          install -m 0644 "$GITHUB_WORKSPACE/Icon.png" "$stage_dir/Icon.png"
+          install -m 0755 "$GITHUB_WORKSPACE/install-user.sh" "$stage_dir/install-user.sh"
+          install -m 0755 "$GITHUB_WORKSPACE/uninstall-user.sh" "$stage_dir/uninstall-user.sh"
+          install -m 0644 "$GITHUB_WORKSPACE/packaging/README.txt" "$stage_dir/README.txt"
+
+          tar -C "$dist_dir" -cJf "$archive_path" "$(basename "$stage_dir")"
 
       - name: Generate checksums
         working-directory: dist

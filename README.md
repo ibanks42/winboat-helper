@@ -22,10 +22,6 @@ curl -fsSL https://raw.githubusercontent.com/ibanks42/winboat-helper/main/instal
 ~/.local/lib/winboat-helper/uninstall-user.sh
 ```
 
-## Build A Release Bundle
+## Releases
 
-```bash
-./build-release.sh v0.1.0
-```
-
-This creates a tarball in `dist/` that contains the binary plus the user-local installer.
+Tagged releases like `v0.1.0` are built and packaged by GitHub Actions for Linux `amd64`.

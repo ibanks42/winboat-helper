@@ -161,7 +161,7 @@ func (w *winboatApp) clearStoredCredentials() {
 func (w *winboatApp) reloadMonitors(showResult bool) {
 	go func() {
 		currentSelection := w.selectedMonitorIDsFromUI()
-		options, err := detectMonitors()
+		options, backend, err := detectMonitors()
 		if err != nil {
 			w.reportError("Refresh Monitors", err)
 			return
@@ -192,7 +192,7 @@ func (w *winboatApp) reloadMonitors(showResult bool) {
 		})
 
 		if showResult {
-			w.appendLog("Reloaded %d monitor option(s) from xfreerdp.", len(options))
+			w.appendLog("Reloaded %d monitor option(s) using %s.", len(options), backend.DisplayName)
 		}
 	}()
 }

@@ -2,6 +2,12 @@
 
 WinBoat Helper is a small Linux tray app for controlling the WinBoat container and launching FreeRDP.
 
+It supports FreeRDP installed as:
+
+- native `xfreerdp`
+- native `xfreerdp3`
+- Flatpak `com.freerdp.FreeRDP`
+
 ## Install
 
 Install the latest public release for your user account:

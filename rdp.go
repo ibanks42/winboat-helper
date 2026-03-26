@@ -9,6 +9,11 @@ import (
 )
 
 func (w *winboatApp) launchRDP(cfg runtimeConfig, port string) error {
+	backend, err := resolveRDPBackend()
+	if err != nil {
+		return err
+	}
+
 	args := []string{
 		fmt.Sprintf("/u:%s", cfg.Username),
 		"/d:.",
@@ -20,7 +25,7 @@ func (w *winboatApp) launchRDP(cfg runtimeConfig, port string) error {
 		"/cert:tofu",
 	}
 
-	cmd := exec.Command("xfreerdp", args...)
+	cmd := exec.Command(backend.Command, backend.args(args...)...)
 	cmd.Stdin = strings.NewReader(cfg.Password + "\n")
 
 	stdout, err := cmd.StdoutPipe()
@@ -34,20 +39,20 @@ func (w *winboatApp) launchRDP(cfg runtimeConfig, port string) error {
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start xfreerdp: %w", err)
+		return fmt.Errorf("start %s: %w", backend.DisplayName, err)
 	}
 
-	w.appendLog("Launched xfreerdp on 127.0.0.1:%s using monitors %s.", port, joinMonitorIDs(cfg.MonitorIDs))
+	w.appendLog("Launched %s on 127.0.0.1:%s using monitors %s.", backend.DisplayName, port, joinMonitorIDs(cfg.MonitorIDs))
 
-	go w.streamCommandOutput("xfreerdp", stdout)
-	go w.streamCommandOutput("xfreerdp", stderr)
+	go w.streamCommandOutput(backend.DisplayName, stdout)
+	go w.streamCommandOutput(backend.DisplayName, stderr)
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			w.reportError("RDP Session", fmt.Errorf("xfreerdp exited: %w", err))
+			w.reportError("RDP Session", fmt.Errorf("%s exited: %w", backend.DisplayName, err))
 			return
 		}
 
-		w.appendLog("xfreerdp exited cleanly.")
+		w.appendLog("%s exited cleanly.", backend.DisplayName)
 	}()
 
 	return nil

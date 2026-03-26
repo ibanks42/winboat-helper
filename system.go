@@ -11,10 +11,15 @@ import (
 	"time"
 )
 
-func detectMonitors() ([]monitorOption, error) {
-	output, err := runCommand(context.Background(), 15*time.Second, "xfreerdp", "/list:monitor")
+func detectMonitors() ([]monitorOption, rdpBackend, error) {
+	backend, err := resolveRDPBackend()
 	if err != nil {
-		return nil, fmt.Errorf("list monitors: %w", err)
+		return nil, rdpBackend{}, err
+	}
+
+	output, err := runCommand(context.Background(), 15*time.Second, backend.Command, backend.args("/list:monitor")...)
+	if err != nil {
+		return nil, rdpBackend{}, fmt.Errorf("list monitors with %s: %w", backend.DisplayName, err)
 	}
 
 	var options []monitorOption
@@ -35,14 +40,14 @@ func detectMonitors() ([]monitorOption, error) {
 	}
 
 	if len(options) == 0 {
-		return nil, errors.New("xfreerdp did not report any monitors")
+		return nil, rdpBackend{}, fmt.Errorf("%s did not report any monitors", backend.DisplayName)
 	}
 
 	sort.Slice(options, func(i, j int) bool {
 		return options[i].ID < options[j].ID
 	})
 
-	return options, nil
+	return options, backend, nil
 }
 
 func inspectWinboatState() (status string, port string, err error) {

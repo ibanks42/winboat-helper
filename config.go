@@ -14,12 +14,14 @@ const (
 	configFolderName = "winboat-rdp"
 	credentialsFile  = "credentials"
 	monitorsFile     = "monitors"
+	settingsFile     = "settings"
 )
 
 type storedConfig struct {
 	Username   string
 	Password   string
 	MonitorIDs []int
+	Scale      string
 }
 
 func loadStoredConfig() (storedConfig, error) {
@@ -35,12 +37,18 @@ func loadStoredConfig() (storedConfig, error) {
 		return cfg, fmt.Errorf("load monitors: %w", err)
 	}
 
+	settings, err := readShellAssignments(configFilePath(settingsFile))
+	if err != nil {
+		return cfg, fmt.Errorf("load settings: %w", err)
+	}
+
 	cfg.Username = creds["RDP_USER"]
 	cfg.Password = creds["RDP_PASS"]
 	cfg.MonitorIDs, err = parseMonitorIDs(mons["RDP_MONITORS"])
 	if err != nil {
 		return cfg, fmt.Errorf("parse monitors: %w", err)
 	}
+	cfg.Scale = normalizeScale(settings["RDP_SCALE"])
 
 	return cfg, nil
 }
@@ -51,6 +59,10 @@ func saveStoredConfig(cfg storedConfig) error {
 	}
 
 	if err := saveMonitors(cfg.MonitorIDs); err != nil {
+		return err
+	}
+
+	if err := saveScale(cfg.Scale); err != nil {
 		return err
 	}
 
@@ -81,6 +93,13 @@ func saveMonitors(ids []int) error {
 	return writeShellAssignments(
 		configFilePath(monitorsFile),
 		[][2]string{{"RDP_MONITORS", joinMonitorIDs(ids)}},
+	)
+}
+
+func saveScale(scale string) error {
+	return writeShellAssignments(
+		configFilePath(settingsFile),
+		[][2]string{{"RDP_SCALE", normalizeScale(scale)}},
 	)
 }
 
@@ -204,6 +223,17 @@ func joinMonitorIDs(ids []int) string {
 	}
 
 	return strings.Join(parts, ",")
+}
+
+func normalizeScale(scale string) string {
+	trimmed := strings.TrimSpace(scale)
+	for _, option := range supportedScales {
+		if trimmed == option {
+			return option
+		}
+	}
+
+	return defaultScale
 }
 
 func shellQuote(value string) string {

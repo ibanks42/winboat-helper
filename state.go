@@ -32,6 +32,7 @@ func (w *winboatApp) currentConfigFromUI() (runtimeConfig, error) {
 		Username:   username,
 		Password:   password,
 		MonitorIDs: monitorIDs,
+		Scale:      normalizeScale(w.scaleSelect.Selected),
 	}, nil
 }
 

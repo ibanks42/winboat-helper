@@ -27,6 +27,9 @@ func (w *winboatApp) buildUI() {
 	w.passwordEntry.SetPlaceHolder("Windows password")
 	w.passwordEntry.SetIcon(theme.LoginIcon())
 
+	w.scaleSelect = widget.NewSelect(supportedScales, nil)
+	w.scaleSelect.SetSelected(defaultScale)
+
 	w.monitorChecks = widget.NewCheckGroup(nil, nil)
 	w.monitorHint = widget.NewLabel("Pick the monitors to use for the RDP session.")
 	w.monitorHint.Wrapping = fyne.TextWrapWord
@@ -43,12 +46,12 @@ func (w *winboatApp) buildUI() {
 	w.activityLog.Scroll = fyne.ScrollVerticalOnly
 
 	w.connectButton = widget.NewButtonWithIcon("Connect", theme.MediaPlayIcon(), func() {
-		w.connect(false)
+		w.connect()
 	})
 	w.connectButton.Importance = widget.HighImportance
 
-	w.restartConnectButton = widget.NewButtonWithIcon("Restart + Connect", theme.MediaReplayIcon(), func() {
-		w.connect(true)
+	w.restartConnectButton = widget.NewButtonWithIcon("Restart", theme.MediaReplayIcon(), func() {
+		w.restartVM()
 	})
 
 	w.stopButton = widget.NewButtonWithIcon("Stop VM", theme.MediaStopIcon(), func() {
@@ -131,10 +134,10 @@ func (w *winboatApp) installTray() {
 		w.showSettingsWindow()
 	})
 	w.trayConnectItem = fyne.NewMenuItemWithIcon("Connect", theme.MediaPlayIcon(), func() {
-		w.connect(false)
+		w.connect()
 	})
-	w.trayRestartItem = fyne.NewMenuItemWithIcon("Restart + Connect", theme.MediaReplayIcon(), func() {
-		w.connect(true)
+	w.trayRestartItem = fyne.NewMenuItemWithIcon("Restart", theme.MediaReplayIcon(), func() {
+		w.restartVM()
 	})
 	w.trayStopItem = fyne.NewMenuItemWithIcon("Stop VM", theme.MediaStopIcon(), func() {
 		w.toggleVM()
@@ -180,6 +183,7 @@ func (w *winboatApp) buildSettingsWindow() {
 	settingsForm := widget.NewForm(
 		widget.NewFormItem("Username", w.usernameEntry),
 		widget.NewFormItem("Password", w.passwordEntry),
+		widget.NewFormItem("Scale", w.scaleSelect),
 	)
 
 	startupSection := widget.NewCard("Startup", "Create or remove a login autostart entry for this user.", container.NewVBox(

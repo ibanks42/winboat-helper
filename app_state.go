@@ -11,13 +11,14 @@ import (
 )
 
 const (
-	containerName     = "WinBoat"
-	defaultScale      = "180"
-	portWaitTimeout   = 60 * time.Second
-	restartReadyDelay = 8 * time.Second
-	statusPollEvery   = 3 * time.Second
-	maxLogLines       = 200
+	containerName   = "WinBoat"
+	defaultScale    = "180"
+	portWaitTimeout = 60 * time.Second
+	statusPollEvery = 3 * time.Second
+	maxLogLines     = 200
 )
+
+var supportedScales = []string{"100", "140", "180"}
 
 var monitorLinePattern = regexp.MustCompile(`\[(\d+)\]\s+(\d+x\d+)\s+\+(-?\d+)\+(-?\d+)`)
 
@@ -30,6 +31,7 @@ type runtimeConfig struct {
 	Username   string
 	Password   string
 	MonitorIDs []int
+	Scale      string
 }
 
 type winboatApp struct {
@@ -38,6 +40,7 @@ type winboatApp struct {
 
 	usernameEntry   *widget.Entry
 	passwordEntry   *widget.Entry
+	scaleSelect     *widget.Select
 	monitorChecks   *widget.CheckGroup
 	monitorHint     *widget.Label
 	containerLabel  *widget.Label

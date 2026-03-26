@@ -8,7 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-func (w *winboatApp) connect(restart bool) {
+func (w *winboatApp) connect() {
 	cfg, err := w.currentConfigFromUI()
 	if err != nil {
 		w.reportError("Connect", err)
@@ -16,9 +16,6 @@ func (w *winboatApp) connect(restart bool) {
 	}
 
 	action := "Connect"
-	if restart {
-		action = "Restart + Connect"
-	}
 
 	if !w.beginBusy(action) {
 		return
@@ -32,30 +29,11 @@ func (w *winboatApp) connect(restart bool) {
 			return
 		}
 
-		if restart {
-			w.setLastAction("Restarting WinBoat...")
-			w.appendLog("Restarting %s container.", containerName)
-			if _, err := runCommand(context.Background(), 30*time.Second, "docker", "restart", containerName); err != nil {
-				w.reportError(action, fmt.Errorf("restart container: %w", err))
-				return
-			}
-		}
-
 		w.setLastAction("Waiting for RDP port...")
 		port, err := w.waitForPort(portWaitTimeout)
 		if err != nil {
 			w.reportError(action, err)
 			return
-		}
-
-		if restart {
-			w.setLastAction("Waiting for Windows to become ready...")
-			w.appendLog("Port %s is ready; giving Windows %s to settle.", port, restartReadyDelay)
-			select {
-			case <-time.After(restartReadyDelay):
-			case <-w.done:
-				return
-			}
 		}
 
 		w.setLastAction("Launching FreeRDP...")
@@ -64,6 +42,25 @@ func (w *winboatApp) connect(restart bool) {
 			return
 		}
 
+		w.refreshStatusAsync(false)
+	}()
+}
+
+func (w *winboatApp) restartVM() {
+	if !w.beginBusy("Restart VM") {
+		return
+	}
+
+	go func() {
+		defer w.endBusy("Ready")
+
+		w.appendLog("Restarting %s container.", containerName)
+		if _, err := runCommand(context.Background(), 30*time.Second, "docker", "restart", containerName); err != nil {
+			w.reportError("Restart VM", fmt.Errorf("restart container: %w", err))
+			return
+		}
+
+		w.appendLog("WinBoat container restarted.")
 		w.refreshStatusAsync(false)
 	}()
 }

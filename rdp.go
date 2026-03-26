@@ -21,7 +21,7 @@ func (w *winboatApp) launchRDP(cfg runtimeConfig, port string) error {
 		fmt.Sprintf("/v:127.0.0.1:%s", port),
 		"/multimon",
 		fmt.Sprintf("/monitors:%s", joinMonitorIDs(cfg.MonitorIDs)),
-		fmt.Sprintf("/scale:%s", defaultScale),
+		fmt.Sprintf("/scale:%s", normalizeScale(cfg.Scale)),
 		"/cert:tofu",
 	}
 
@@ -42,7 +42,7 @@ func (w *winboatApp) launchRDP(cfg runtimeConfig, port string) error {
 		return fmt.Errorf("start %s: %w", backend.DisplayName, err)
 	}
 
-	w.appendLog("Launched %s on 127.0.0.1:%s using monitors %s.", backend.DisplayName, port, joinMonitorIDs(cfg.MonitorIDs))
+	w.appendLog("Launched %s on 127.0.0.1:%s using monitors %s at %s%% scale.", backend.DisplayName, port, joinMonitorIDs(cfg.MonitorIDs), normalizeScale(cfg.Scale))
 
 	go w.streamCommandOutput(backend.DisplayName, stdout)
 	go w.streamCommandOutput(backend.DisplayName, stderr)

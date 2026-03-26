@@ -10,6 +10,7 @@ func (w *winboatApp) loadInitialState() {
 
 	w.usernameEntry.SetText(cfg.Username)
 	w.passwordEntry.SetText(cfg.Password)
+	w.scaleSelect.SetSelected(normalizeScale(cfg.Scale))
 	w.preferredMonitors = append([]int(nil), cfg.MonitorIDs...)
 	w.loadStartupSettings()
 

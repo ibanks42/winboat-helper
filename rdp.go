@@ -14,13 +14,18 @@ func (w *winboatApp) launchRDP(cfg runtimeConfig, port string) error {
 		return err
 	}
 
+	monitorIDs := w.backendMonitorIDsForSelected(cfg.MonitorIDs)
+	if len(monitorIDs) == 0 {
+		monitorIDs = append([]int(nil), cfg.MonitorIDs...)
+	}
+
 	args := []string{
 		fmt.Sprintf("/u:%s", cfg.Username),
 		"/d:.",
 		"/from-stdin:force",
 		fmt.Sprintf("/v:127.0.0.1:%s", port),
 		"/multimon",
-		fmt.Sprintf("/monitors:%s", joinMonitorIDs(cfg.MonitorIDs)),
+		fmt.Sprintf("/monitors:%s", joinMonitorIDs(monitorIDs)),
 		fmt.Sprintf("/scale:%s", normalizeScale(cfg.Scale)),
 		"/cert:tofu",
 	}

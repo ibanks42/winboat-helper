@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -20,11 +19,16 @@ const (
 
 var supportedScales = []string{"100", "140", "180"}
 
-var monitorLinePattern = regexp.MustCompile(`\[(\d+)\]\s+(\d+x\d+)\s+\+(-?\d+)\+(-?\d+)`)
+var monitorLinePattern = regexp.MustCompile(`\[(\d+)\].*?(\d+x\d+)\s+\+(-?\d+)\+(-?\d+)`)
 
 type monitorOption struct {
-	ID    int
-	Label string
+	ID        int
+	BackendID int
+	Label     string
+	Width     int
+	Height    int
+	X         int
+	Y         int
 }
 
 type runtimeConfig struct {
@@ -35,8 +39,7 @@ type runtimeConfig struct {
 }
 
 type winboatApp struct {
-	app    fyne.App
-	window fyne.Window
+	app fyne.App
 
 	usernameEntry   *widget.Entry
 	passwordEntry   *widget.Entry
@@ -48,28 +51,28 @@ type winboatApp struct {
 	updatedLabel    *widget.Label
 	selectedLabel   *widget.Label
 	lastActionLabel *widget.Label
-	activityLog     *widget.TextGrid
+	activityLog     *widget.Entry
 
 	connectButton         *widget.Button
 	restartConnectButton  *widget.Button
 	stopButton            *widget.Button
 	settingsButton        *widget.Button
 	launchAtLoginCheck    *widget.Check
-	startHiddenCheck      *widget.Check
 	saveButton            *widget.Button
 	refreshButton         *widget.Button
 	refreshMonitorsButton *widget.Button
 	clearCredsButton      *widget.Button
+	copyLogsButton        *widget.Button
 
 	trayMenu         *fyne.Menu
-	trayShowItem     *fyne.MenuItem
+	trayLogItem      *fyne.MenuItem
 	traySettingsItem *fyne.MenuItem
 	trayConnectItem  *fyne.MenuItem
 	trayRestartItem  *fyne.MenuItem
 	trayStopItem     *fyne.MenuItem
-	trayRefreshItem  *fyne.MenuItem
 	trayQuitItem     *fyne.MenuItem
-	settingsDialog   *dialog.CustomDialog
+	settingsWindow   fyne.Window
+	logWindow        fyne.Window
 
 	mu                sync.Mutex
 	quitOnce          sync.Once
@@ -79,6 +82,9 @@ type winboatApp struct {
 	preferredMonitors []int
 	labelToMonitor    map[string]int
 	logEntries        []logEntry
+	applyingLogText   bool
+	settingsShown     bool
+	logShown          bool
 	done              chan struct{}
 }
 

@@ -44,33 +44,56 @@ func (w *winboatApp) applyStatus(status string, port string, updatedAt time.Time
 }
 
 func (w *winboatApp) refreshPowerControl(status string) {
-	if isRunningStatus(status) {
-		w.connectButton.Enable()
-		w.stopButton.SetText("Stop VM")
-		w.stopButton.SetIcon(theme.MediaStopIcon())
-		w.stopButton.Importance = widget.DangerImportance
-		if w.trayConnectItem != nil {
-			w.trayConnectItem.Disabled = false
+	running := isRunningStatus(status)
+
+	w.mu.Lock()
+	busy := w.busy
+	w.mu.Unlock()
+
+	if w.connectButton != nil {
+		if busy || !running {
+			w.connectButton.Disable()
+		} else {
+			w.connectButton.Enable()
 		}
-		if w.trayStopItem != nil {
-			w.trayStopItem.Label = "Stop VM"
-			w.trayStopItem.Icon = theme.MediaStopIcon()
+	}
+	if w.stopButton != nil {
+		if running {
+			w.stopButton.SetText("Stop VM")
+			w.stopButton.SetIcon(theme.MediaStopIcon())
+			w.stopButton.Importance = widget.DangerImportance
+		} else {
+			w.stopButton.SetText("Start VM")
+			w.stopButton.SetIcon(theme.MediaPlayIcon())
+			w.stopButton.Importance = widget.MediumImportance
 		}
-	} else {
-		w.connectButton.Disable()
-		w.stopButton.SetText("Start VM")
-		w.stopButton.SetIcon(theme.MediaPlayIcon())
-		w.stopButton.Importance = widget.MediumImportance
-		if w.trayConnectItem != nil {
-			w.trayConnectItem.Disabled = true
-		}
-		if w.trayStopItem != nil {
-			w.trayStopItem.Label = "Start VM"
-			w.trayStopItem.Icon = theme.MediaPlayIcon()
+		if busy {
+			w.stopButton.Disable()
+		} else {
+			w.stopButton.Enable()
 		}
 	}
 
-	if w.trayMenu != nil {
+	trayChanged := false
+	if w.trayConnectItem != nil {
+		trayChanged = updateTrayItemDisabled(w.trayConnectItem, busy || !running) || trayChanged
+	}
+	if w.trayStopItem != nil {
+		desiredLabel := "Start VM"
+		desiredIcon := theme.MediaPlayIcon()
+		if running {
+			desiredLabel = "Stop VM"
+			desiredIcon = theme.MediaStopIcon()
+		}
+		if w.trayStopItem.Label != desiredLabel {
+			w.trayStopItem.Label = desiredLabel
+			w.trayStopItem.Icon = desiredIcon
+			trayChanged = true
+		}
+		trayChanged = updateTrayItemDisabled(w.trayStopItem, busy) || trayChanged
+	}
+
+	if trayChanged && w.trayMenu != nil {
 		w.trayMenu.Refresh()
 	}
 }

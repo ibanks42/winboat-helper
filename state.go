@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -55,6 +56,27 @@ func (w *winboatApp) selectedMonitorIDsFromUI() []int {
 
 	sort.Ints(ids)
 	return ids
+}
+
+func (w *winboatApp) backendMonitorIDsForSelected(ids []int) []int {
+	selected := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		selected[id] = true
+	}
+
+	w.mu.Lock()
+	options := append([]monitorOption(nil), w.monitorOptions...)
+	w.mu.Unlock()
+
+	backendIDs := make([]int, 0, len(ids))
+	for _, option := range options {
+		if selected[option.ID] {
+			backendIDs = append(backendIDs, option.BackendID)
+		}
+	}
+
+	sort.Ints(backendIDs)
+	return backendIDs
 }
 
 func (w *winboatApp) applySelectedMonitors(ids []int) {
@@ -114,49 +136,90 @@ func (w *winboatApp) setControlsBusy(busy bool) {
 		containerRunning := isRunningStatus(w.containerStatus)
 		w.mu.Unlock()
 
-		if busy {
-			w.connectButton.Disable()
-			w.restartConnectButton.Disable()
-			w.stopButton.Disable()
-			w.settingsButton.Disable()
-			w.saveButton.Disable()
-			w.refreshButton.Disable()
-			w.refreshMonitorsButton.Disable()
-			w.clearCredsButton.Disable()
-		} else {
-			if containerRunning {
-				w.connectButton.Enable()
-			} else {
+		trayChanged := false
+
+		if w.connectButton != nil {
+			if busy || !containerRunning {
 				w.connectButton.Disable()
+			} else {
+				w.connectButton.Enable()
 			}
-			w.restartConnectButton.Enable()
-			w.stopButton.Enable()
-			w.settingsButton.Enable()
-			w.saveButton.Enable()
-			w.refreshButton.Enable()
-			w.refreshMonitorsButton.Enable()
-			w.clearCredsButton.Enable()
+		}
+		if w.restartConnectButton != nil {
+			if busy {
+				w.restartConnectButton.Disable()
+			} else {
+				w.restartConnectButton.Enable()
+			}
+		}
+		if w.stopButton != nil {
+			if busy {
+				w.stopButton.Disable()
+			} else {
+				w.stopButton.Enable()
+			}
+		}
+		if w.settingsButton != nil {
+			if busy {
+				w.settingsButton.Disable()
+			} else {
+				w.settingsButton.Enable()
+			}
+		}
+		if w.saveButton != nil {
+			if busy {
+				w.saveButton.Disable()
+			} else {
+				w.saveButton.Enable()
+			}
+		}
+		if w.refreshButton != nil {
+			if busy {
+				w.refreshButton.Disable()
+			} else {
+				w.refreshButton.Enable()
+			}
+		}
+		if w.refreshMonitorsButton != nil {
+			if busy {
+				w.refreshMonitorsButton.Disable()
+			} else {
+				w.refreshMonitorsButton.Enable()
+			}
+		}
+		if w.clearCredsButton != nil {
+			if busy {
+				w.clearCredsButton.Disable()
+			} else {
+				w.clearCredsButton.Enable()
+			}
 		}
 
 		if w.traySettingsItem != nil {
-			w.traySettingsItem.Disabled = busy
+			trayChanged = updateTrayItemDisabled(w.traySettingsItem, busy) || trayChanged
 		}
 		if w.trayConnectItem != nil {
-			w.trayConnectItem.Disabled = busy || !containerRunning
+			trayChanged = updateTrayItemDisabled(w.trayConnectItem, busy || !containerRunning) || trayChanged
 		}
 		if w.trayRestartItem != nil {
-			w.trayRestartItem.Disabled = busy
+			trayChanged = updateTrayItemDisabled(w.trayRestartItem, busy) || trayChanged
 		}
 		if w.trayStopItem != nil {
-			w.trayStopItem.Disabled = busy
+			trayChanged = updateTrayItemDisabled(w.trayStopItem, busy) || trayChanged
 		}
-		if w.trayRefreshItem != nil {
-			w.trayRefreshItem.Disabled = busy
-		}
-		if w.trayMenu != nil {
+		if trayChanged && w.trayMenu != nil {
 			w.trayMenu.Refresh()
 		}
 	})
+}
+
+func updateTrayItemDisabled(item *fyne.MenuItem, disabled bool) bool {
+	if item == nil || item.Disabled == disabled {
+		return false
+	}
+
+	item.Disabled = disabled
+	return true
 }
 
 func (w *winboatApp) setLastAction(text string) {
@@ -168,27 +231,88 @@ func (w *winboatApp) setLastAction(text string) {
 func (w *winboatApp) appendLog(format string, args ...any) {
 	line := fmt.Sprintf("%s  %s", time.Now().Format("15:04:05"), fmt.Sprintf(format, args...))
 	entry := logEntry{Text: line, Severity: classifyLogSeverity(line)}
+	w.writeLogFileLine(line)
 
 	w.mu.Lock()
 	w.logEntries = append(w.logEntries, entry)
 	if len(w.logEntries) > maxLogLines {
 		w.logEntries = append([]logEntry(nil), w.logEntries[len(w.logEntries)-maxLogLines:]...)
 	}
-	entries := append([]logEntry(nil), w.logEntries...)
+	text := w.joinLogEntriesLocked()
 	w.mu.Unlock()
 
 	fyne.Do(func() {
-		w.activityLog.Rows = w.buildLogRows(entries)
-		w.activityLog.Refresh()
-		w.activityLog.ScrollToBottom()
+		w.setActivityLogText(text)
 	})
+}
+
+func (w *winboatApp) logText() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.joinLogEntriesLocked()
+}
+
+func (w *winboatApp) joinLogEntriesLocked() string {
+	lines := make([]string, 0, len(w.logEntries))
+	for _, entry := range w.logEntries {
+		lines = append(lines, entry.Text)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (w *winboatApp) setActivityLogText(text string) {
+	w.mu.Lock()
+	w.applyingLogText = true
+	w.mu.Unlock()
+	defer func() {
+		w.mu.Lock()
+		w.applyingLogText = false
+		w.mu.Unlock()
+	}()
+
+	w.activityLog.SetText(text)
+	lineCount := 0
+	lastLineLen := 0
+	if text != "" {
+		lines := strings.Split(text, "\n")
+		lineCount = len(lines) - 1
+		lastLineLen = len([]rune(lines[len(lines)-1]))
+	}
+	w.activityLog.CursorRow = lineCount
+	w.activityLog.CursorColumn = lastLineLen
+	w.activityLog.Refresh()
+}
+
+func (w *winboatApp) writeLogFileLine(line string) {
+	if err := ensureConfigDir(); err != nil {
+		return
+	}
+
+	file, err := os.OpenFile(configFilePath(logsFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	_, _ = file.WriteString(line + "\n")
 }
 
 func (w *winboatApp) reportError(action string, err error) {
 	wrapped := fmt.Errorf("%s failed: %w", action, err)
 	w.appendLog("%v", wrapped)
 	fyne.Do(func() {
-		dialog.ShowError(wrapped, w.window)
+		w.mu.Lock()
+		settingsShown := w.settingsShown
+		logShown := w.logShown
+		w.mu.Unlock()
+
+		switch {
+		case logShown && w.logWindow != nil:
+			dialog.ShowError(wrapped, w.logWindow)
+		case settingsShown && w.settingsWindow != nil:
+			dialog.ShowError(wrapped, w.settingsWindow)
+		}
 		w.lastActionLabel.SetText(wrapped.Error())
 	})
 }

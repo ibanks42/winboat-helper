@@ -1,9 +1,10 @@
 package main
 
 import (
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -11,14 +12,6 @@ import (
 )
 
 func (w *winboatApp) buildUI() {
-	w.window = w.app.NewWindow("WinBoat Helper")
-	w.window.SetIcon(appIcon)
-	w.window.Resize(fyne.NewSize(760, 720))
-	w.window.SetCloseIntercept(func() {
-		w.window.Hide()
-		w.notifyHideToTray()
-	})
-
 	w.usernameEntry = widget.NewEntry()
 	w.usernameEntry.SetPlaceHolder("Windows username")
 	w.usernameEntry.SetIcon(theme.AccountIcon())
@@ -42,39 +35,33 @@ func (w *winboatApp) buildUI() {
 	w.lastActionLabel = widget.NewLabel("Ready")
 	w.lastActionLabel.Wrapping = fyne.TextWrapWord
 
-	w.activityLog = widget.NewTextGrid()
+	w.activityLog = widget.NewMultiLineEntry()
+	w.activityLog.Wrapping = fyne.TextWrapOff
 	w.activityLog.Scroll = fyne.ScrollVerticalOnly
+	w.activityLog.TextStyle = fyne.TextStyle{Monospace: true}
+	w.activityLog.SetMinRowsVisible(14)
+	w.activityLog.OnChanged = func(text string) {
+		w.mu.Lock()
+		applying := w.applyingLogText
+		w.mu.Unlock()
+		if applying {
+			return
+		}
 
-	w.connectButton = widget.NewButtonWithIcon("Connect", theme.MediaPlayIcon(), func() {
-		w.connect()
-	})
-	w.connectButton.Importance = widget.HighImportance
+		logs := w.logText()
+		if text == logs {
+			return
+		}
 
-	w.restartConnectButton = widget.NewButtonWithIcon("Restart", theme.MediaReplayIcon(), func() {
-		w.restartVM()
-	})
-
-	w.stopButton = widget.NewButtonWithIcon("Stop VM", theme.MediaStopIcon(), func() {
-		w.toggleVM()
-	})
-	w.stopButton.Importance = widget.DangerImportance
-
-	w.settingsButton = widget.NewButtonWithIcon("Settings", theme.SettingsIcon(), func() {
-		w.showSettingsWindow()
-	})
+		fyne.Do(func() {
+			w.setActivityLogText(logs)
+		})
+	}
 
 	w.launchAtLoginCheck = widget.NewCheck("Launch WinBoat when I sign in", nil)
-	w.startHiddenCheck = widget.NewCheck("Start hidden in the tray on auto-launch", nil)
-	w.launchAtLoginCheck.OnChanged = func(bool) {
-		w.syncStartupControls()
-	}
 
 	w.saveButton = widget.NewButtonWithIcon("Save Settings", theme.DocumentSaveIcon(), func() {
 		w.saveSettings()
-	})
-
-	w.refreshButton = widget.NewButtonWithIcon("Refresh Status", theme.ViewRefreshIcon(), func() {
-		w.refreshStatusAsync(true)
 	})
 
 	w.refreshMonitorsButton = widget.NewButtonWithIcon("Refresh Monitors", theme.ViewRefreshIcon(), func() {
@@ -85,6 +72,22 @@ func (w *winboatApp) buildUI() {
 		w.clearStoredCredentials()
 	})
 
+	w.copyLogsButton = widget.NewButtonWithIcon("Copy Logs", theme.ContentCopyIcon(), func() {
+		logs := w.logText()
+		if strings.TrimSpace(logs) == "" {
+			w.appendLog("No logs to copy yet.")
+			return
+		}
+
+		w.app.Clipboard().SetContent(logs)
+		w.appendLog("Copied %d log line(s) to the clipboard. Log file: %s.", strings.Count(logs, "\n")+1, configFilePath(logsFile))
+	})
+
+	w.buildLogWindow()
+	w.buildSettingsWindow()
+}
+
+func (w *winboatApp) buildLogWindow() {
 	statusForm := widget.NewForm(
 		widget.NewFormItem("Container", w.containerLabel),
 		widget.NewFormItem("RDP Port", w.portLabel),
@@ -93,90 +96,31 @@ func (w *winboatApp) buildUI() {
 		widget.NewFormItem("Last Action", w.lastActionLabel),
 	)
 
-	contentTop := container.NewVBox(
-		widget.NewCard("Status", "Live container state, port mapping, and current monitor selection.", container.NewVBox(
-			statusForm,
-			container.NewHBox(w.refreshButton, layout.NewSpacer(), w.settingsButton),
-		)),
-		widget.NewCard("Actions", "Launch RDP directly or manage the WinBoat container.", container.NewHBox(
-			w.connectButton,
-			w.restartConnectButton,
-			w.stopButton,
-		)),
-	)
-
 	content := container.NewBorder(
-		contentTop,
+		widget.NewCard("Status", "Live container state, port mapping, and current monitor selection.", statusForm),
 		nil,
 		nil,
 		nil,
-		widget.NewCard("Activity", "Recent events from the app and the RDP process.", container.NewStack(w.activityLog)),
+		widget.NewCard("Activity", "Recent events from the app and the RDP process.", container.NewBorder(
+			container.NewHBox(layout.NewSpacer(), w.copyLogsButton),
+			nil,
+			nil,
+			nil,
+			container.NewStack(w.activityLog),
+		)),
 	)
 
-	w.window.SetContent(container.NewPadded(content))
-	if desk, ok := w.app.(desktop.App); ok {
-		desk.SetSystemTrayWindow(w.window)
-	}
-	w.window.SetMaster()
-}
-
-func (w *winboatApp) installTray() {
-	desk, ok := w.app.(desktop.App)
-	if !ok {
-		w.appendLog("System tray is not available in this Fyne driver.")
-		return
-	}
-
-	w.trayShowItem = fyne.NewMenuItemWithIcon("Show Window", theme.VisibilityIcon(), func() {
-		w.showWindow()
+	w.logWindow = w.app.NewWindow("WinBoat Log")
+	w.logWindow.SetIcon(appIcon)
+	w.logWindow.Resize(fyne.NewSize(760, 720))
+	w.logWindow.SetCloseIntercept(func() {
+		w.mu.Lock()
+		w.logShown = false
+		w.mu.Unlock()
+		w.logWindow.Hide()
+		w.notifyHideToTray()
 	})
-	w.traySettingsItem = fyne.NewMenuItemWithIcon("Settings", theme.SettingsIcon(), func() {
-		w.showSettingsWindow()
-	})
-	w.trayConnectItem = fyne.NewMenuItemWithIcon("Connect", theme.MediaPlayIcon(), func() {
-		w.connect()
-	})
-	w.trayRestartItem = fyne.NewMenuItemWithIcon("Restart", theme.MediaReplayIcon(), func() {
-		w.restartVM()
-	})
-	w.trayStopItem = fyne.NewMenuItemWithIcon("Stop VM", theme.MediaStopIcon(), func() {
-		w.toggleVM()
-	})
-	w.trayRefreshItem = fyne.NewMenuItemWithIcon("Refresh Status", theme.ViewRefreshIcon(), func() {
-		w.refreshStatusAsync(true)
-	})
-	w.trayQuitItem = fyne.NewMenuItemWithIcon("Quit", theme.LogoutIcon(), func() {
-		w.signalDone()
-		w.app.Quit()
-	})
-	w.trayQuitItem.IsQuit = true
-
-	w.trayMenu = fyne.NewMenu("WinBoat Helper",
-		w.trayShowItem,
-		w.traySettingsItem,
-		fyne.NewMenuItemSeparator(),
-		w.trayConnectItem,
-		w.trayRestartItem,
-		w.trayStopItem,
-		w.trayRefreshItem,
-		fyne.NewMenuItemSeparator(),
-		w.trayQuitItem,
-	)
-
-	desk.SetSystemTrayMenu(w.trayMenu)
-	desk.SetSystemTrayIcon(appIcon)
-	desk.SetSystemTrayWindow(w.window)
-}
-
-func (w *winboatApp) showWindow() {
-	if w.window == nil {
-		return
-	}
-
-	fyne.Do(func() {
-		w.window.Show()
-		w.window.RequestFocus()
-	})
+	w.logWindow.SetContent(container.NewPadded(content))
 }
 
 func (w *winboatApp) buildSettingsWindow() {
@@ -188,7 +132,6 @@ func (w *winboatApp) buildSettingsWindow() {
 
 	startupSection := widget.NewCard("Startup", "Create or remove a login autostart entry for this user.", container.NewVBox(
 		w.launchAtLoginCheck,
-		w.startHiddenCheck,
 	))
 
 	content := container.NewVBox(
@@ -202,17 +145,86 @@ func (w *winboatApp) buildSettingsWindow() {
 		container.NewHBox(w.refreshMonitorsButton, layout.NewSpacer(), w.clearCredsButton, w.saveButton),
 	)
 
-	w.settingsDialog = dialog.NewCustom("WinBoat Helper Settings", "Close", container.NewPadded(content), w.window)
-	w.settingsDialog.Resize(fyne.NewSize(760, 620))
-	w.settingsDialog.SetIcon(appIcon)
+	w.settingsWindow = w.app.NewWindow("WinBoat Settings")
+	w.settingsWindow.SetIcon(appIcon)
+	w.settingsWindow.Resize(fyne.NewSize(760, 620))
+	w.settingsWindow.SetCloseIntercept(func() {
+		w.mu.Lock()
+		w.settingsShown = false
+		w.mu.Unlock()
+		w.settingsWindow.Hide()
+		w.notifyHideToTray()
+	})
+	w.settingsWindow.SetContent(container.NewPadded(content))
+}
 
-	w.syncStartupControls()
+func (w *winboatApp) installTray() {
+	desk, ok := w.app.(desktop.App)
+	if !ok {
+		w.appendLog("System tray is not available in this Fyne driver.")
+		return
+	}
+
+	w.traySettingsItem = fyne.NewMenuItemWithIcon("Settings", theme.SettingsIcon(), func() {
+		w.showSettingsWindow()
+	})
+	w.trayLogItem = fyne.NewMenuItemWithIcon("Logs", theme.FileTextIcon(), func() {
+		w.showLogWindow()
+	})
+	w.trayConnectItem = fyne.NewMenuItemWithIcon("Connect", theme.MediaPlayIcon(), func() {
+		w.connect()
+	})
+	w.trayRestartItem = fyne.NewMenuItemWithIcon("Restart and Connect", theme.MediaReplayIcon(), func() {
+		w.restartAndConnect()
+	})
+	w.trayStopItem = fyne.NewMenuItemWithIcon("Stop VM", theme.MediaStopIcon(), func() {
+		w.toggleVM()
+	})
+	w.trayQuitItem = fyne.NewMenuItemWithIcon("Quit", theme.LogoutIcon(), func() {
+		w.signalDone()
+		w.app.Quit()
+	})
+	w.trayQuitItem.IsQuit = true
+
+	w.trayMenu = fyne.NewMenu("WinBoat Helper",
+		w.traySettingsItem,
+		w.trayLogItem,
+		fyne.NewMenuItemSeparator(),
+		w.trayConnectItem,
+		w.trayRestartItem,
+		w.trayStopItem,
+		fyne.NewMenuItemSeparator(),
+		w.trayQuitItem,
+	)
+
+	desk.SetSystemTrayMenu(w.trayMenu)
+	desk.SetSystemTrayIcon(appIcon)
 }
 
 func (w *winboatApp) showSettingsWindow() {
-	if w.settingsDialog == nil {
-		w.buildSettingsWindow()
+	if w.settingsWindow == nil {
+		return
 	}
 
-	w.settingsDialog.Show()
+	fyne.Do(func() {
+		w.mu.Lock()
+		w.settingsShown = true
+		w.mu.Unlock()
+		w.settingsWindow.Show()
+		w.settingsWindow.RequestFocus()
+	})
+}
+
+func (w *winboatApp) showLogWindow() {
+	if w.logWindow == nil {
+		return
+	}
+
+	fyne.Do(func() {
+		w.mu.Lock()
+		w.logShown = true
+		w.mu.Unlock()
+		w.logWindow.Show()
+		w.logWindow.RequestFocus()
+	})
 }

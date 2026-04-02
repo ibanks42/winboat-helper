@@ -7,17 +7,12 @@ import (
 )
 
 func main() {
-	options := parseLaunchOptions(os.Args[1:])
+	_ = parseLaunchOptions(os.Args[1:])
 
 	a := app.NewWithID("dev.ibanks.winboat-helper")
 	a.SetIcon(appIcon)
 
-	ui := newWinboatApp(a)
-	if options.hidden && ui.trayMenu != nil {
-		ui.appendLog("Started hidden.")
-	} else {
-		ui.window.Show()
-	}
+	newWinboatApp(a)
 
 	a.Run()
 }

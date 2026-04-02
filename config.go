@@ -15,6 +15,7 @@ const (
 	credentialsFile  = "credentials"
 	monitorsFile     = "monitors"
 	settingsFile     = "settings"
+	logsFile         = "winboat.log"
 )
 
 type storedConfig struct {

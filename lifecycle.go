@@ -51,19 +51,4 @@ func (w *winboatApp) loadStartupSettings() {
 	}
 
 	w.launchAtLoginCheck.SetChecked(settings.Enabled)
-	w.startHiddenCheck.SetChecked(settings.StartHidden)
-	w.syncStartupControls()
-}
-
-func (w *winboatApp) syncStartupControls() {
-	if w.launchAtLoginCheck == nil || w.startHiddenCheck == nil {
-		return
-	}
-
-	if w.launchAtLoginCheck.Checked {
-		w.startHiddenCheck.Enable()
-		return
-	}
-
-	w.startHiddenCheck.Disable()
 }

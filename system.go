@@ -18,9 +18,6 @@ func detectMonitors() ([]monitorOption, rdpBackend, error) {
 	}
 
 	output, err := runCommand(context.Background(), 15*time.Second, backend.Command, backend.args("/list:monitor")...)
-	if err != nil {
-		return nil, rdpBackend{}, fmt.Errorf("list monitors with %s: %w", backend.DisplayName, err)
-	}
 
 	var options []monitorOption
 	for _, rawLine := range strings.Split(output, "\n") {
@@ -34,18 +31,45 @@ func detectMonitors() ([]monitorOption, rdpBackend, error) {
 			continue
 		}
 
-		id := mustAtoi(match[1])
-		label := fmt.Sprintf("%d - %s (%s,%s)", id, match[2], signedCoordinate(match[3]), signedCoordinate(match[4]))
-		options = append(options, monitorOption{ID: id, Label: label})
+		backendID := mustAtoi(match[1])
+		width, height, err := parseResolution(match[2])
+		if err != nil {
+			continue
+		}
+		x := mustAtoi(match[3])
+		y := mustAtoi(match[4])
+		options = append(options, monitorOption{BackendID: backendID, Width: width, Height: height, X: x, Y: y})
 	}
 
 	if len(options) == 0 {
+		if err != nil {
+			return nil, rdpBackend{}, fmt.Errorf("list monitors with %s: %w", backend.DisplayName, err)
+		}
+
 		return nil, rdpBackend{}, fmt.Errorf("%s did not report any monitors", backend.DisplayName)
 	}
 
 	sort.Slice(options, func(i, j int) bool {
-		return options[i].ID < options[j].ID
+		if options[i].X != options[j].X {
+			return options[i].X < options[j].X
+		}
+		if options[i].Y != options[j].Y {
+			return options[i].Y < options[j].Y
+		}
+		if options[i].Width != options[j].Width {
+			return options[i].Width < options[j].Width
+		}
+		if options[i].Height != options[j].Height {
+			return options[i].Height < options[j].Height
+		}
+
+		return options[i].BackendID < options[j].BackendID
 	})
+
+	for i := range options {
+		options[i].ID = i
+		options[i].Label = fmt.Sprintf("%d - %dx%d (%s,%s)", options[i].ID, options[i].Width, options[i].Height, signedCoordinate(strconv.Itoa(options[i].X)), signedCoordinate(strconv.Itoa(options[i].Y)))
+	}
 
 	return options, backend, nil
 }
@@ -131,6 +155,25 @@ func mustAtoi(value string) int {
 	}
 
 	return parsed
+}
+
+func parseResolution(value string) (int, int, error) {
+	parts := strings.SplitN(strings.TrimSpace(value), "x", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid resolution %q", value)
+	}
+
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return width, height, nil
 }
 
 func isRunningStatus(status string) bool {

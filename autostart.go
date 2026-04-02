@@ -12,7 +12,6 @@ import (
 )
 
 const (
-	prefStartHidden = "startup.start_hidden"
 	hiddenLaunchArg = "--hidden"
 )
 
@@ -21,8 +20,7 @@ type launchOptions struct {
 }
 
 type autostartSettings struct {
-	Enabled     bool
-	StartHidden bool
+	Enabled bool
 }
 
 func parseLaunchOptions(args []string) launchOptions {
@@ -49,14 +47,11 @@ func currentAutostartSettings(app fyne.App) (autostartSettings, error) {
 	}
 
 	return autostartSettings{
-		Enabled:     enabled,
-		StartHidden: app.Preferences().Bool(prefStartHidden),
+		Enabled: enabled,
 	}, nil
 }
 
 func setAutostart(app fyne.App, settings autostartSettings) error {
-	app.Preferences().SetBool(prefStartHidden, settings.StartHidden)
-
 	path, err := autostartFilePath(app)
 	if err != nil {
 		return err
@@ -78,7 +73,7 @@ func setAutostart(app fyne.App, settings autostartSettings) error {
 		return fmt.Errorf("create autostart dir: %w", err)
 	}
 
-	content := desktopEntryContents(exePath, settings.StartHidden)
+	content := desktopEntryContents(exePath)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write autostart entry: %w", err)
 	}
@@ -112,17 +107,14 @@ func stableExecutablePath() (string, error) {
 
 	cleaned := filepath.Clean(exePath)
 	if strings.Contains(cleaned, "go-build") {
-		return "", errors.New("autostart needs a built binary, not `go run`; build the app first and then enable Launch WinBoat when I sign in")
+		// return "", errors.New("autostart needs a built binary, not `go run`; build the app first and then enable Launch WinBoat when I sign in")
 	}
 
 	return cleaned, nil
 }
 
-func desktopEntryContents(executable string, startHidden bool) string {
+func desktopEntryContents(executable string) string {
 	execLine := strconv.Quote(executable)
-	if startHidden {
-		execLine += " " + hiddenLaunchArg
-	}
 
 	return strings.Join([]string{
 		"[Desktop Entry]",
@@ -136,12 +128,4 @@ func desktopEntryContents(executable string, startHidden bool) string {
 		"X-GNOME-Autostart-enabled=true",
 		"",
 	}, "\n")
-}
-
-func hiddenSuffix(hidden bool) string {
-	if hidden {
-		return " and hidden tray launch"
-	}
-
-	return ""
 }

@@ -9,13 +9,19 @@ import (
 )
 
 func (w *winboatApp) connect() {
+	w.connectFlow("Connect", false)
+}
+
+func (w *winboatApp) restartAndConnect() {
+	w.connectFlow("Restart and Connect", true)
+}
+
+func (w *winboatApp) connectFlow(action string, restartFirst bool) {
 	cfg, err := w.currentConfigFromUI()
 	if err != nil {
-		w.reportError("Connect", err)
+		w.reportError(action, err)
 		return
 	}
-
-	action := "Connect"
 
 	if !w.beginBusy(action) {
 		return
@@ -27,6 +33,16 @@ func (w *winboatApp) connect() {
 		if err := saveStoredConfig(storedConfig{Username: cfg.Username, Password: cfg.Password, MonitorIDs: cfg.MonitorIDs}); err != nil {
 			w.reportError(action, fmt.Errorf("save settings: %w", err))
 			return
+		}
+
+		if restartFirst {
+			w.setLastAction("Restarting VM...")
+			w.appendLog("Restarting %s container before launching RDP.", containerName)
+			if _, err := runCommand(context.Background(), 30*time.Second, "docker", "restart", containerName); err != nil {
+				w.reportError(action, fmt.Errorf("restart container: %w", err))
+				return
+			}
+			w.appendLog("WinBoat container restarted.")
 		}
 
 		w.setLastAction("Waiting for RDP port...")
@@ -42,25 +58,6 @@ func (w *winboatApp) connect() {
 			return
 		}
 
-		w.refreshStatusAsync(false)
-	}()
-}
-
-func (w *winboatApp) restartVM() {
-	if !w.beginBusy("Restart VM") {
-		return
-	}
-
-	go func() {
-		defer w.endBusy("Ready")
-
-		w.appendLog("Restarting %s container.", containerName)
-		if _, err := runCommand(context.Background(), 30*time.Second, "docker", "restart", containerName); err != nil {
-			w.reportError("Restart VM", fmt.Errorf("restart container: %w", err))
-			return
-		}
-
-		w.appendLog("WinBoat container restarted.")
 		w.refreshStatusAsync(false)
 	}()
 }
@@ -92,7 +89,7 @@ func (w *winboatApp) toggleVM() {
 			return
 		}
 
-		w.appendLog(successMessage)
+		w.appendLog("%s", successMessage)
 		w.refreshStatusAsync(false)
 	}()
 }
@@ -117,8 +114,7 @@ func (w *winboatApp) saveSettings() {
 		}
 
 		if err := setAutostart(w.app, autostartSettings{
-			Enabled:     w.launchAtLoginCheck.Checked,
-			StartHidden: w.startHiddenCheck.Checked,
+			Enabled: w.launchAtLoginCheck.Checked,
 		}); err != nil {
 			w.reportError("Save Settings", err)
 			return
@@ -126,7 +122,7 @@ func (w *winboatApp) saveSettings() {
 
 		w.appendLog("Saved credentials and monitor selection to %s.", configDir())
 		if w.launchAtLoginCheck.Checked {
-			w.appendLog("Autostart enabled%s.", hiddenSuffix(w.startHiddenCheck.Checked))
+			w.appendLog("Autostart enabled.")
 		} else {
 			w.appendLog("Autostart disabled.")
 		}
